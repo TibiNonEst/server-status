@@ -1,0 +1,54 @@
+plugins {
+    id 'com.github.johnrengelman.shadow' version '7.1.0'
+    id 'java'
+}
+
+group = 'me.tibinonest.plugins'
+version = '0.1.0'
+description = 'Server status discord bot plugin.'
+
+repositories {
+    maven {
+        url = 'https://papermc.io/repo/repository/maven-public/'
+    }
+}
+
+dependencies {
+    compileOnly 'net.md-5:bungeecord-api:1.17-R0.1-SNAPSHOT'
+    implementation 'org.apache.commons:commons-text:1.9'
+    implementation 'org.javacord:javacord:3.3.2'
+    implementation 'org.bstats:bstats-bungeecord:2.2.1'
+}
+
+sourceCompatibility = JavaVersion.VERSION_1_8
+targetCompatibility = JavaVersion.VERSION_1_8
+
+java {
+    withSourcesJar()
+}
+
+shadowJar {
+    archiveClassifier.set('')
+    relocate 'org.bstats', 'bstats'
+    from 'LICENSE'
+    minimize {
+        exclude(dependency('org.javacord:'))
+    }
+}
+
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+}
+
+processResources {
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    from(sourceSets.main.resources.srcDirs) {
+        expand (
+                'version': project.version,
+                'description': project.description
+        )
+        include 'bungee.yml'
+    }
+}
+
+assemble.dependsOn shadowJar

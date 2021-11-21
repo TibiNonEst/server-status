@@ -1,0 +1,10 @@
+text-message: 'Players: %current%/%max% %users%'
+voice-message: 'Players: %current%/%max%'
+
+max-players: 50
+
+channels:
+  text: []
+  voice: []
+
+token: ''
