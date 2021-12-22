@@ -1,23 +1,22 @@
 package me.tibinonest.plugins.serverstatus.listeners;
 
+import com.velocitypowered.api.event.PostOrder;
+import com.velocitypowered.api.event.Subscribe;
+import com.velocitypowered.api.event.connection.DisconnectEvent;
 import me.tibinonest.plugins.serverstatus.ServerStatus;
-import net.md_5.bungee.api.event.PlayerDisconnectEvent;
-import net.md_5.bungee.api.plugin.Listener;
-import net.md_5.bungee.event.EventHandler;
 
 import java.util.ArrayList;
 
-public final class PlayerLeave implements Listener {
+public class PlayerLeave {
     private final ServerStatus plugin;
 
     public PlayerLeave(ServerStatus plugin) {
         this.plugin = plugin;
     }
 
-    @EventHandler
-    public void onPlayerLeave(PlayerDisconnectEvent event) {
+    @Subscribe(order = PostOrder.EARLY)
+    public void onPlayerLeave(DisconnectEvent event) {
         ArrayList<String> players = plugin.getPlayerNames();
-        players.remove(event.getPlayer().getDisplayName());
         plugin.updateData(players);
     }
 }

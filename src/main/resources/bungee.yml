@@ -1,3 +1,0 @@
-name: ServerStatus
-version: ${version}
-main: me.tibinonest.plugins.serverstatus.ServerStatus

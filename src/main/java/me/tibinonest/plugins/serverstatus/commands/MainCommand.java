@@ -1,21 +1,27 @@
 package me.tibinonest.plugins.serverstatus.commands;
 
+import com.velocitypowered.api.command.SimpleCommand;
 import me.tibinonest.plugins.serverstatus.ServerStatus;
-import net.md_5.bungee.api.ChatColor;
-import net.md_5.bungee.api.CommandSender;
-import net.md_5.bungee.api.chat.TextComponent;
-import net.md_5.bungee.api.plugin.Command;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 
-public final class MainCommand extends Command {
+public class MainCommand implements SimpleCommand {
     private final ServerStatus plugin;
 
     public MainCommand(ServerStatus plugin) {
-        super("serverstatus", "serverstatus.reload", "ssr", "ssreload", "srvstatus");
         this.plugin = plugin;
     }
 
-    public void execute(CommandSender sender, String[] args) {
+    @Override
+    public void execute(final Invocation invocation) {
+        var source = invocation.source();
+
         plugin.handleReload();
-        sender.sendMessage(new TextComponent(ChatColor.GOLD + "Server Status reloaded!"));
+        source.sendMessage(Component.text("Server Status reloaded!").color(NamedTextColor.GOLD));
+    }
+
+    @Override
+    public boolean hasPermission(final Invocation invocation) {
+        return invocation.source().hasPermission("serverstatus.reload");
     }
 }

@@ -1,5 +1,6 @@
 package me.tibinonest.plugins.serverstatus;
 
+import ninja.leaping.configurate.ConfigurationNode;
 import org.apache.commons.text.StringSubstitutor;
 import org.javacord.api.DiscordApi;
 import org.javacord.api.DiscordApiBuilder;
@@ -7,20 +8,18 @@ import org.javacord.api.entity.activity.ActivityType;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Map;
 
-public final class DiscordBot {
+public class DiscordBot {
     private final DiscordApi api;
-    private final ConfigData config;
+    private final int maxPlayers;
+    private final ConfigurationNode config;
     private final HashMap<String, ActivityType> statusTypes;
 
-    public DiscordBot(String token, ConfigData config) {
+    public DiscordBot(ConfigurationNode config, int maxPlayers) {
         this.config = config;
+        this.maxPlayers = maxPlayers;
 
-        api = new DiscordApiBuilder()
-                .setToken(token)
-                .login()
-                .join();
+        api = new DiscordApiBuilder().setToken(config.getNode("token").getString()).login().join();
 
         statusTypes = new HashMap<>(4);
         statusTypes.put("PLAYING", ActivityType.PLAYING);
@@ -28,31 +27,33 @@ public final class DiscordBot {
         statusTypes.put("WATCHING", ActivityType.WATCHING);
         statusTypes.put("COMPETING", ActivityType.COMPETING);
 
-        if (!statusTypes.containsKey(config.statusType.toUpperCase())) return;
-        api.updateActivity(statusTypes.get(config.statusType.toUpperCase()), config.statusMessage);
+        var currentStatusType = config.getNode("status").getNode("type").getString().toUpperCase();
+
+        if (!statusTypes.containsKey(currentStatusType)) return;
+        api.updateActivity(statusTypes.get(currentStatusType), config.getNode("status").getNode("message").getString());
     }
 
     public void updateData(ArrayList<String> usersOnline) {
-        for (String channel : config.textChannels) {
-            Map<String, String> values = new HashMap<>();
+        for (String channel : config.getNode("channels").getNode("text").getList(Object::toString)) {
+            var values = new HashMap<String, String>();
             values.put("current", String.valueOf(usersOnline.size()));
-            values.put("max", String.valueOf(config.maxPlayers));
+            values.put("max", String.valueOf(maxPlayers));
             values.put("users", String.join(", ", usersOnline));
 
-            StringSubstitutor substitutor = new StringSubstitutor(values, "%", "%");
-            String message = substitutor.replace(config.textMessage);
+            var substitutor = new StringSubstitutor(values, "%", "%");
+            var message = substitutor.replace(config.getNode("text-message").getString());
 
             api.getServerTextChannelById(channel).ifPresent(textChannel -> textChannel.updateTopic(message));
         }
 
-        for (String channel : config.voiceChannels) {
-            Map<String, String> values = new HashMap<>();
+        for (String channel : config.getNode("channels").getNode("voice").getList(Object::toString)) {
+            var values = new HashMap<String, String>();
             values.put("current", String.valueOf(usersOnline.size()));
-            values.put("max", String.valueOf(config.maxPlayers));
+            values.put("max", String.valueOf(maxPlayers));
             values.put("users", usersOnline.toString());
 
-            StringSubstitutor substitutor = new StringSubstitutor(values, "%", "%");
-            String message = substitutor.replace(config.voiceMessage);
+            var substitutor = new StringSubstitutor(values, "%", "%");
+            var message = substitutor.replace(config.getNode("voice-message").getString());
 
             api.getServerVoiceChannelById(channel).ifPresent(voiceChannel -> voiceChannel.updateName(message));
         }
@@ -61,15 +62,9 @@ public final class DiscordBot {
     public void updateActivity(String type, String message) {
         if (!statusTypes.containsKey(type.toUpperCase())) return;
         api.updateActivity(statusTypes.get(type.toUpperCase()), message);
-        config.statusType = type.toUpperCase();
-        config.statusMessage = message;
     }
 
-    public HashMap<String, String> disable() {
+    public void disable() {
         api.disconnect();
-        HashMap<String, String> status = new HashMap<>();
-        status.put("type", config.statusType);
-        status.put("message", config.statusMessage);
-        return status;
     }
 }

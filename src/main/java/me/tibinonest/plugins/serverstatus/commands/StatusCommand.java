@@ -1,22 +1,19 @@
 package me.tibinonest.plugins.serverstatus.commands;
 
+import com.velocitypowered.api.command.SimpleCommand;
 import me.tibinonest.plugins.serverstatus.ServerStatus;
-import net.md_5.bungee.api.ChatColor;
-import net.md_5.bungee.api.CommandSender;
-import net.md_5.bungee.api.chat.TextComponent;
-import net.md_5.bungee.api.plugin.Command;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 
-public final class StatusCommand extends Command {
+public class StatusCommand implements SimpleCommand {
     private final ServerStatus plugin;
     private final HashMap<String, String> display;
 
     public StatusCommand(ServerStatus plugin) {
-        super("status", "serverstatus.status");
         this.plugin = plugin;
 
         display = new HashMap<>(4);
@@ -26,19 +23,32 @@ public final class StatusCommand extends Command {
         display.put("COMPETING", "Competing in ");
     }
 
-    public void execute(CommandSender sender, String[] args) {
+    @Override
+    public void execute(final Invocation invocation) {
+        var source = invocation.source();
+        var args = invocation.arguments();
+
         if (args.length < 2) {
-            sender.sendMessage(new TextComponent(ChatColor.RED + "Not enough args."));
+            source.sendMessage(Component.text("Not enough arguments.", NamedTextColor.RED));
             return;
         }
+
         if (!display.containsKey(args[0].toUpperCase())) {
-            sender.sendMessage(new TextComponent(ChatColor.RED + "Incorrect type."));
+            source.sendMessage(Component.text("Incorrect type.", NamedTextColor.RED));
             return;
         }
-        List<String> messageArgs = new ArrayList<>(Arrays.asList(args));
+
+        var messageArgs = new ArrayList<>(Arrays.asList(args));
         messageArgs.remove(0);
-        String message = String.join(" ", messageArgs);
+
+        var message = String.join(" ", messageArgs);
+
         plugin.updateActivity(args[0].toUpperCase(), message);
-        sender.sendMessage(new TextComponent(ChatColor.GOLD + "Updated activity to: " + display.get(args[0].toUpperCase()) + message));
+        source.sendMessage(Component.text( "Updated activity to: " + display.get(args[0].toUpperCase()) + message).color(NamedTextColor.GOLD));
+    }
+
+    @Override
+    public boolean hasPermission(final Invocation invocation) {
+        return invocation.source().hasPermission("serverstatus.status");
     }
 }

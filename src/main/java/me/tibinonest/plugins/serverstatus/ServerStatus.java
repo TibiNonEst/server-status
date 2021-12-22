@@ -1,40 +1,73 @@
 package me.tibinonest.plugins.serverstatus;
 
+import com.google.inject.Inject;
+import com.velocitypowered.api.event.Subscribe;
+import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
+import com.velocitypowered.api.event.proxy.ProxyReloadEvent;
+import com.velocitypowered.api.event.proxy.ProxyShutdownEvent;
+import com.velocitypowered.api.plugin.Plugin;
+import com.velocitypowered.api.plugin.annotation.DataDirectory;
+import com.velocitypowered.api.proxy.Player;
+import com.velocitypowered.api.proxy.ProxyServer;
 import me.tibinonest.plugins.serverstatus.commands.*;
 import me.tibinonest.plugins.serverstatus.listeners.*;
-import net.md_5.bungee.api.ProxyServer;
-import net.md_5.bungee.api.connection.ProxiedPlayer;
-import net.md_5.bungee.api.plugin.Plugin;
-import net.md_5.bungee.config.Configuration;
-import net.md_5.bungee.config.ConfigurationProvider;
-import net.md_5.bungee.config.YamlConfiguration;
-import org.bstats.bungeecord.Metrics;
+import ninja.leaping.configurate.ConfigurationNode;
+import ninja.leaping.configurate.yaml.YAMLConfigurationLoader;
+import org.bstats.velocity.Metrics;
+import org.slf4j.Logger;
+import org.yaml.snakeyaml.DumperOptions;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
-public final class ServerStatus extends Plugin {
-    private Configuration configuration, statusConfig;
+@Plugin(id = "server-status", name = "Server Status", description = "${description}", version = "${version}", authors = {"TibiNonEst"})
+public class ServerStatus {
+    private final ProxyServer server;
+    private final Logger logger;
+    private final Path dataDirectory;
+    private final Metrics.Factory metricsFactory;
+    private ConfigurationNode config;
     private DiscordBot bot;
 
-    @Override
-    public void onEnable() {
-        handleEnable();
-
-        getProxy().getPluginManager().registerListener(this, new PlayerJoin(this));
-        getProxy().getPluginManager().registerListener(this, new PlayerLeave(this));
-        getProxy().getPluginManager().registerCommand(this, new MainCommand(this));
-        getProxy().getPluginManager().registerCommand(this, new StatusCommand(this));
-
-        Metrics metrics = new Metrics(this, 12069);
+    @Inject
+    public ServerStatus(ProxyServer server, Logger logger, @DataDirectory Path dataDirectory, Metrics.Factory metricsFactory) {
+        this.server = server;
+        this.logger = logger;
+        this.dataDirectory = dataDirectory;
+        this.metricsFactory = metricsFactory;
     }
 
-    @Override
-    public void onDisable() {
+    @Subscribe
+    public void onProxyInitialization(ProxyInitializeEvent event) {
+        logger.info("Server Status v${version} initialized!");
+        handleEnable();
+
+        server.getEventManager().register(this, new PlayerJoin(this));
+        server.getEventManager().register(this, new PlayerLeave(this));
+
+        var MainCommandMeta = server.getCommandManager().metaBuilder("serverstatus")
+                .aliases("ssr", "ssreload", "srvstatus").build();
+        server.getCommandManager().register(MainCommandMeta, new MainCommand(this));
+
+        var StatusCommandMeta = server.getCommandManager().metaBuilder("status").build();
+        server.getCommandManager().register(StatusCommandMeta, new StatusCommand(this));
+
+        metricsFactory.make(this, 12069);
+    }
+
+    @Subscribe
+    public void onProxyReload(ProxyReloadEvent event) {
+        handleReload();
+    }
+
+    @Subscribe
+    public void onProxyShutdown(ProxyShutdownEvent event) {
         handleDisable();
     }
 
@@ -43,96 +76,69 @@ public final class ServerStatus extends Plugin {
     }
 
     public ArrayList<String> getPlayerNames() {
-        ArrayList<String> players = new ArrayList<>();
-        for (ProxiedPlayer player : ProxyServer.getInstance().getPlayers()) players.add(player.getDisplayName());
-        return players;
+        return server.getAllPlayers().stream().map(Player::getUsername).collect(Collectors.toCollection(ArrayList::new));
     }
 
     public void updateActivity(String type, String message) {
+        config.getNode("status").getNode("type").setValue(type);
+        config.getNode("status").getNode("message").setValue(message);
         bot.updateActivity(type, message);
+        saveConfig();
     }
 
     private void handleEnable() {
-        loadConfig();
-        loadStatus();
+        var config = loadConfig();
 
-        ConfigData data = new ConfigData(
-                configuration.getString("text-message"),
-                configuration.getString("voice-message"),
-                configuration.getInt("max-players"),
-                configuration.getStringList("channels.text"),
-                configuration.getStringList("channels.voice"),
-                statusConfig.getString("type"),
-                statusConfig.getString("message")
-        );
+        if (config.isEmpty()) {
+            logger.warn("Config file could not be loaded.");
+            return;
+        }
 
-        bot = new DiscordBot(configuration.getString("token"), data);
-        bot.updateData(new ArrayList<>());
-    }
+        this.config = config.get();
 
-    private void handleDisable() {
-        HashMap<String, String> status = bot.disable();
-        statusConfig.set("type", status.get("type"));
-        statusConfig.set("message", status.get("message"));
-        writeStatus();
+        bot = new DiscordBot(this.config, server.getConfiguration().getShowMaxPlayers());
+        bot.updateData(getPlayerNames());
+        logger.info("Bot starting!");
     }
 
     public void handleReload() {
-        handleDisable();
+        bot.disable();
         handleEnable();
     }
 
-    private void loadConfig() {
-        if (!getDataFolder().exists()) getDataFolder().mkdir();
-
-        File file = new File(getDataFolder(), "config.yml");
-
-        if (!file.exists()) {
-            try (InputStream in = getResourceAsStream("config.yml")) {
-                Files.copy(in, file.toPath());
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
-
-        try {
-            configuration = ConfigurationProvider.getProvider(YamlConfiguration.class).load(new File(getDataFolder(), "config.yml"));
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+    private void handleDisable() {
+        bot.updateData(new ArrayList<>());
+        bot.disable();
     }
 
-    private void loadStatus() {
-        File file = new File(getDataFolder(), "status.yml");
+    private Optional<ConfigurationNode> loadConfig() {
+        var file = new File(dataDirectory.toFile(), "config.yml");
+        if (!file.getParentFile().exists()) {
+            file.getParentFile().mkdirs();
+        }
         if (!file.exists()) {
-            try (InputStream in = getResourceAsStream("status.yml")) {
-                Files.copy(in, file.toPath());
+            try {
+                Files.copy(Objects.requireNonNull(getClass().getClassLoader().getResourceAsStream("config.yml")), file.toPath());
             } catch (IOException e) {
-                e.printStackTrace();
+                logger.warn("Unable to load default config file. " + e.getMessage());
             }
         }
-
         try {
-            statusConfig = ConfigurationProvider.getProvider(YamlConfiguration.class).load(new File(getDataFolder(), "status.yml"));
+            return Optional.of(YAMLConfigurationLoader.builder().setFile(file).build().load());
         } catch (IOException e) {
-            e.printStackTrace();
+            logger.warn("Unable to load config file. " + e.getMessage());
         }
+        return Optional.empty();
     }
 
-    private void writeStatus() {
-        File file = new File(getDataFolder(), "status.yml");
-        if (!file.exists()) {
-            try (InputStream in = getResourceAsStream("status.yml")) {
-                Files.copy(in, file.toPath());
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
+    public void saveConfig() {
+        var file = new File(dataDirectory.toFile(), "config.yml");
+        if (!file.getParentFile().exists() || !file.exists()) loadConfig();
 
         try {
-            ConfigurationProvider.getProvider(YamlConfiguration.class).save(statusConfig, new File(getDataFolder(), "status.yml"));
-        } catch (IOException e) {
-            e.printStackTrace();
+            YAMLConfigurationLoader.builder().setFile(file).setFlowStyle(DumperOptions.FlowStyle.BLOCK).setIndent(2).build().save(config);
+        } catch (Exception e) {
+            logger.warn("Could not write to config file. " + e.getMessage());
         }
     }
 }

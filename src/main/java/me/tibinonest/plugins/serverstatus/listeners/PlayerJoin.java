@@ -1,18 +1,18 @@
 package me.tibinonest.plugins.serverstatus.listeners;
 
+import com.velocitypowered.api.event.PostOrder;
+import com.velocitypowered.api.event.Subscribe;
+import com.velocitypowered.api.event.connection.PostLoginEvent;
 import me.tibinonest.plugins.serverstatus.ServerStatus;
-import net.md_5.bungee.api.event.PostLoginEvent;
-import net.md_5.bungee.api.plugin.Listener;
-import net.md_5.bungee.event.EventHandler;
 
-public final class PlayerJoin implements Listener {
+public class PlayerJoin {
     private final ServerStatus plugin;
 
     public PlayerJoin(ServerStatus plugin) {
         this.plugin = plugin;
     }
 
-    @EventHandler
+    @Subscribe(order = PostOrder.EARLY)
     public void onPlayerJoin(PostLoginEvent event) {
         plugin.updateData(plugin.getPlayerNames());
     }
