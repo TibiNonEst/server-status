@@ -58,7 +58,7 @@ public class ServerStatus {
         var StatusCommandMeta = server.getCommandManager().metaBuilder("status").build();
         server.getCommandManager().register(StatusCommandMeta, new StatusCommand(this));
 
-        metricsFactory.make(this, 12069);
+        metricsFactory.make(this, 13695);
     }
 
     @Subscribe
